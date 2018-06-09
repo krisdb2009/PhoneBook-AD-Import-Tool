@@ -1,12 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.DirectoryServices;
+using System.DirectoryServices.ActiveDirectory;
 using System.Configuration;
 using System.IO;
-using System.Diagnostics;
 
 namespace PhoneBookImport
 {
@@ -20,20 +17,37 @@ namespace PhoneBookImport
 
         static void Main(string[] args)
         {
+            Console.WriteLine("Reading configuration...");
             init();
-
+            Console.WriteLine("Running directory search on: " + DomainController.FindOne(new DirectoryContext(DirectoryContextType.Domain)).Name + "...");
             SearchResultCollection results = dSearch.FindAll();
+            string jsonNumbers = "";
             foreach (SearchResult result in results)
             {
                 if (result.Properties[ldapNumberAttribute].Count > 0)
                 {
-                    Console.WriteLine("\n" + result.Path);
-                    Console.WriteLine(generatePhoneNumber(result));
-                    Console.WriteLine(generateDescription(result));
-                    foreach (string tag in generateTags(result))
+                    string json = "{\"";
+                    string number = generatePhoneNumber(result);
+                    string description = generateDescription(result);
+                    Console.WriteLine("\nDistinguished Name: " + result.Path);
+                    Console.WriteLine("Phone Number: " + number);
+                    Console.WriteLine("Generated Description: " + description);
+                    Console.WriteLine("Generated Tags:");
+                    json = json + number + "\":{\"description\":\"" + description + "\",\"tags\":[";
+                    List<string> tags = generateTags(result);
+                    string jsonTags = "";
+                    int count = 0;
+                    foreach (string tag in tags)
                     {
                         Console.WriteLine(tag);
+                        jsonTags = jsonTags + "\"" + tag + "\"";
+                        if(count++ != tags.Count - 1)
+                        {
+                            jsonTags = jsonTags + ",";
+                        }
                     }
+                    json = json + jsonTags + "]}}";
+                    Console.WriteLine(json);
                 }
             }
             Console.ReadLine();
@@ -75,7 +89,25 @@ namespace PhoneBookImport
                     description = description + scheme;
                 }
             }
-            return description;
+            string escapeQuote(string s)
+            {
+                count = 0;
+                foreach (char character in s)
+                {
+                    if (character == char.Parse("\""))
+                    {
+                        if (count == 0 || s[count - 1] != char.Parse("\\"))
+                        {
+                            s = s.Insert(count, "\\");
+                            s = escapeQuote(s);
+                            break;
+                        }
+                    }
+                    count++;
+                }
+                return s;
+            }
+            return escapeQuote(description);
         }
 
         public static void init()
