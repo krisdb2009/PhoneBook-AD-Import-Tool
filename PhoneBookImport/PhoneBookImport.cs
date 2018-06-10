@@ -21,12 +21,13 @@ namespace PhoneBookImport
             init();
             Console.WriteLine("Running directory search on: " + DomainController.FindOne(new DirectoryContext(DirectoryContextType.Domain)).Name + "...");
             SearchResultCollection results = dSearch.FindAll();
-            string jsonNumbers = "";
+            string jsonNumbers = "{";
+            bool first = true;
             foreach (SearchResult result in results)
             {
                 if (result.Properties[ldapNumberAttribute].Count > 0)
                 {
-                    string json = "{\"";
+                    string json = "\"";
                     string number = generatePhoneNumber(result);
                     string description = generateDescription(result);
                     Console.WriteLine("\nDistinguished Name: " + result.Path);
@@ -46,10 +47,21 @@ namespace PhoneBookImport
                             jsonTags = jsonTags + ",";
                         }
                     }
-                    json = json + jsonTags + "]}}";
-                    Console.WriteLine(json);
+                    json = json + jsonTags + "]}";
+                    if(first)
+                    {
+                        first = false;
+                    }
+                    else
+                    {
+                        json = "," + json;
+                    }
+                    jsonNumbers = jsonNumbers + json;
                 }
             }
+            jsonNumbers = jsonNumbers + "}";
+
+            Console.WriteLine(jsonNumbers);
             Console.ReadLine();
         }
 
@@ -209,12 +221,16 @@ namespace PhoneBookImport
                 if(list[0].ToLower() == lowerTag)
                 {
                     found = true;
+                    bool first = true;
                     foreach(string replacementTag in list)
                     {
-                        string lowerReplacementTag = replacementTag.ToLower();
-                        if (lowerReplacementTag != lowerTag)
+                        if (!first)
                         {
-                            translatedTags.Add(lowerReplacementTag);
+                            translatedTags.Add(replacementTag.ToLower());
+                        }
+                        else
+                        {
+                            first = false;
                         }
                     }
                 }
