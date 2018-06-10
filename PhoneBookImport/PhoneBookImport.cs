@@ -4,23 +4,31 @@ using System.DirectoryServices;
 using System.DirectoryServices.ActiveDirectory;
 using System.Configuration;
 using System.IO;
+using System.Net;
+using System.Collections.Specialized;
 
 namespace PhoneBookImport
 {
-    class Router
+    class PhoneBookImport
     {
         static List<List<string>> translation = new List<List<string>>();
         static List<string> descriptionScheme = new List<string>();
         static List<string> ldapTags = new List<string>();
         static DirectorySearcher dSearch;
         static string ldapNumberAttribute;
+        static string API;
 
         static void Main(string[] args)
         {
+            Console.WriteLine("Running as: " + Environment.UserDomainName + "\\" + Environment.UserName);
             Console.WriteLine("Reading configuration...");
             init();
             Console.WriteLine("Running directory search on: " + DomainController.FindOne(new DirectoryContext(DirectoryContextType.Domain)).Name + "...");
+
+            //Run a domain search.
             SearchResultCollection results = dSearch.FindAll();
+
+            //Generate json string from the search results.
             string jsonNumbers = "{";
             bool first = true;
             foreach (SearchResult result in results)
@@ -60,11 +68,26 @@ namespace PhoneBookImport
                 }
             }
             jsonNumbers = jsonNumbers + "}";
+            Console.WriteLine("\nJSON to be uploaded:\n" + jsonNumbers + "\n");
 
-            Console.WriteLine(jsonNumbers);
-            Console.ReadLine();
+            //Upload results to the API.
+            Console.WriteLine("Uploading json...");
+            uploadResults(jsonNumbers);
+            Console.WriteLine("Done.");
         }
 
+        //Uploads a json string to the API.
+        public static void uploadResults(string json)
+        {
+            WebClient client = new WebClient();
+            client.UseDefaultCredentials = true;
+            var values = new NameValueCollection();
+            values["api"] = "import";
+            values["import"] = json;
+            client.UploadValues(API, "POST", values);
+        }
+
+        //Generates a phone number from a search result, and clears any characters that are not numbers.
         public static string generatePhoneNumber(SearchResult searchResult)
         {
             string number = "";
@@ -83,6 +106,7 @@ namespace PhoneBookImport
             return number;
         }
 
+        //Generates a description from a search result and then escapes any quotes.
         public static string generateDescription(SearchResult searchResult)
         {
             int count = 0;
@@ -101,27 +125,10 @@ namespace PhoneBookImport
                     description = description + scheme;
                 }
             }
-            string escapeQuote(string s)
-            {
-                count = 0;
-                foreach (char character in s)
-                {
-                    if (character == char.Parse("\""))
-                    {
-                        if (count == 0 || s[count - 1] != char.Parse("\\"))
-                        {
-                            s = s.Insert(count, "\\");
-                            s = escapeQuote(s);
-                            break;
-                        }
-                    }
-                    count++;
-                }
-                return s;
-            }
-            return escapeQuote(description);
+            return description.Replace("\"", "\\\"");
         }
 
+        //Initializes the configuration and varaibles.
         public static void init()
         {
             //If configuration does not exits, create one.
@@ -133,7 +140,7 @@ namespace PhoneBookImport
 
             //Pull configuration.
             ldapNumberAttribute = ConfigurationManager.AppSettings["ldapNumberAttribute"];
-            string API = ConfigurationManager.AppSettings["API"];
+            API = ConfigurationManager.AppSettings["API"];
             string descriptionString = ConfigurationManager.AppSettings["descriptionString"];
             string tagList = ConfigurationManager.AppSettings["tagList"];
             string translationList = ConfigurationManager.AppSettings["translationList"];
@@ -141,6 +148,7 @@ namespace PhoneBookImport
             //Setup the directory searcher using the filter specified in the config.
             dSearch = new DirectorySearcher(ConfigurationManager.AppSettings["ldapFilter"]);
 
+            //Parse the list of tags.
             foreach (string tag in tagList.Split(char.Parse(",")))
             {
                 string ldapAttr = tag.TrimStart(char.Parse(" "));
@@ -150,6 +158,8 @@ namespace PhoneBookImport
                     ldapTags.Add(ldapAttr);
                 }
             }
+
+            //Parse the description scheme.
             int lineCount = 0;
             foreach (string scheme in descriptionString.Split(char.Parse("%")))
             {
@@ -159,6 +169,8 @@ namespace PhoneBookImport
                 }
                 descriptionScheme.Add(scheme);
             }
+
+            //Parse the translation list.
             foreach (string translation in translationList.Split(char.Parse(",")))
             {
                 string[] split = translation.Split(char.Parse("="));
@@ -171,13 +183,16 @@ namespace PhoneBookImport
                         list.Add(tag);
                     }
                 }
-                Router.translation.Add(list);
+                PhoneBookImport.translation.Add(list);
             }
+
+            //Set directory search parameters.
             dSearch.PageSize = 10000;
             dSearch.PropertiesToLoad.Add(ldapNumberAttribute);
             dSearch.SearchRoot = new DirectoryEntry("LDAP://" + ConfigurationManager.AppSettings["ldapSearchRoot"]);
         }
 
+        //Generates tags from a search result, and then returns a list.
         public static List<string> generateTags(SearchResult searchResult)
         {
             List<string> finalTags = new List<string>();
@@ -211,6 +226,7 @@ namespace PhoneBookImport
             return finalTags;
         }
 
+        //Translates a a tag into another tag based on the translation list.
         public static List<string> tagTranslator(string tag)
         {
             List<string> translatedTags = new List<string>();
