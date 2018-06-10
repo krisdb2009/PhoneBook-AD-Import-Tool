@@ -75,7 +75,7 @@ namespace PhoneBookImport
                 {
                     if (!char.IsNumber(character))
                     {
-                        num = num.Replace(character, char.Parse(""));
+                        num = num.Replace(character.ToString(), "");
                     }
                 }
                 number = num;
